@@ -28,7 +28,6 @@ st.set_page_config(page_title="Wine Quality Predictor", page_icon="🍷", layout
 
 
 @st.cache_data
-
 def get_data():
     """Load the local UCI dataset or download and cache a local copy."""
     if CSV_PATH.exists():
@@ -64,7 +63,6 @@ def train_and_save(data):
 
 
 @st.cache_resource
-
 def load_model(data):
     """Load the trained model, training it once if the artifact is not present."""
     if MODEL_PATH.exists():
@@ -115,6 +113,22 @@ def show_evaluation(data, model):
     )
 
 
+def get_feature_input_values():
+    """Use a manual input form for single-sample classification."""
+    feature_columns = list(model.feature_names_in_)
+    sample = {}
+    for column in feature_columns:
+        sample[column] = st.number_input(
+            column,
+            min_value=0.0,
+            value=0.0,
+            step=0.01,
+            format="%.4f",
+            key=f"manual_{column}",
+        )
+    return sample
+
+
 try:
     data = get_data()
     model = load_model(data)
@@ -136,6 +150,36 @@ with st.expander("Dataset preview", expanded=True):
     st.dataframe(data.head(10), use_container_width=True)
 
 show_evaluation(data, model)
+
+st.subheader("Categorize a wine sample")
+manual_data = {}
+with st.form("sample_form"):
+    manual_data = get_feature_input_values()
+    submitted = st.form_submit_button("Categorize sample")
+
+if submitted:
+    sample_df = pd.DataFrame([manual_data])
+    sample_df = sample_df.reindex(columns=list(model.feature_names_in_))
+    sample_df = sample_df.apply(pd.to_numeric, errors="coerce")
+
+    if sample_df.isnull().values.any() or np.isinf(sample_df.to_numpy()).any():
+        st.error("Please enter valid numeric values for all wine measurements.")
+    else:
+        prediction = model.predict(sample_df)[0]
+        probability = model.predict_proba(sample_df)[0]
+        predicted_label = CLASS_NAMES[int(prediction)]
+        confidence = probability.max() * 100
+
+        st.success(f"Categorized as: {predicted_label}")
+        st.metric("Prediction confidence", f"{confidence:.2f}%")
+        st.write("Class probabilities:")
+        prob_df = pd.DataFrame(
+            {
+                "Class": CLASS_NAMES,
+                "Probability": [float(p) for p in probability],
+            }
+        )
+        st.dataframe(prob_df, use_container_width=True)
 
 st.subheader("Predict uploaded wine samples")
 st.write(
@@ -213,3 +257,6 @@ st.info(
     "testing, sensory evaluation, food-safety procedures, or professional "
     "quality-control decisions."
 )
+
+
+# End of file
